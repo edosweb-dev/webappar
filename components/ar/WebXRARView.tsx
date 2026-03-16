@@ -274,7 +274,6 @@ export default function WebXRARView({
       const session = await xr.requestSession('immersive-ar', {
         requiredFeatures: ['hit-test'],
         optionalFeatures: ['dom-overlay', 'light-estimation'],
-        // @ts-expect-error — domOverlay is an optional WebXR feature not yet in all type defs
         domOverlay: { root: overlay },
       });
       sessionRef.current = session;
