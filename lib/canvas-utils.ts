@@ -207,6 +207,73 @@ export function createTiledCanvas(
 }
 
 // ---------------------------------------------------------------------------
+// Real-world surface area computation
+// ---------------------------------------------------------------------------
+
+/**
+ * Area of a quadrilateral (in square pixels) via the shoelace formula.
+ * Points must be ordered: [top-left, top-right, bottom-right, bottom-left].
+ */
+export function computeQuadAreaPx(pts: [Point, Point, Point, Point]): number {
+  const [a, b, c, d] = pts;
+  return 0.5 * Math.abs(
+    (a.x * b.y - b.x * a.y) +
+    (b.x * c.y - c.x * b.y) +
+    (c.x * d.y - d.x * c.y) +
+    (d.x * a.y - a.x * d.y)
+  );
+}
+
+export interface SurfaceCalcResult {
+  /** Real area of the selected quad in m² */
+  areaSqM: number;
+  /** Area + 10% cut/waste margin */
+  areaWithMarginSqM: number;
+  /** Number of panels required (each panel = PANEL_SQM m²) */
+  panelsNeeded: number;
+  /** Estimated total price in euros */
+  totalPrice: number;
+  /** Scale factor: metres per pixel */
+  mPerPx: number;
+}
+
+/** Standard Mattonflex panel size: 80 × 40 cm */
+export const PANEL_SQM = 0.32;
+
+/**
+ * Compute the real-world surface area from the selected pixel quad.
+ *
+ * @param pts         4 corner points in video pixel coordinates
+ * @param realWidthM  User-supplied real width of the selection in metres
+ * @param pricePerSqM  Product price per m² (from WooCommerce)
+ */
+export function computeSurfaceArea(
+  pts: [Point, Point, Point, Point],
+  realWidthM: number,
+  pricePerSqM: number
+): SurfaceCalcResult {
+  const { width: avgWidthPx } = computeQuadDimensions(pts);
+  if (avgWidthPx < 1 || realWidthM <= 0) {
+    return { areaSqM: 0, areaWithMarginSqM: 0, panelsNeeded: 0, totalPrice: 0, mPerPx: 0 };
+  }
+
+  const mPerPx = realWidthM / avgWidthPx;
+  const areaPx = computeQuadAreaPx(pts);
+  const areaSqM = areaPx * mPerPx * mPerPx;
+  const areaWithMarginSqM = areaSqM * 1.1; // +10% waste margin
+  const panelsNeeded = Math.ceil(areaWithMarginSqM / PANEL_SQM);
+  const totalPrice = areaSqM * pricePerSqM; // price per m² × area
+
+  return {
+    areaSqM: Math.round(areaSqM * 100) / 100,
+    areaWithMarginSqM: Math.round(areaWithMarginSqM * 100) / 100,
+    panelsNeeded,
+    totalPrice: Math.round(totalPrice * 100) / 100,
+    mPerPx,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Watermark
 // ---------------------------------------------------------------------------
 

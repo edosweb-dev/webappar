@@ -8,6 +8,8 @@ import {
   computeQuadDimensions,
   addWatermark,
   loadImage,
+  computeSurfaceArea,
+  PANEL_SQM,
 } from '@/lib/canvas-utils';
 import { getTextureUrl, generatePlaceholderTexture } from '@/lib/textures';
 import { ProductPicker } from './ProductSelector';
@@ -50,6 +52,8 @@ export default function LiveARView({ selectedProduct, products, onChangeProduct,
   const [showSelection, setShowSelection] = useState(true);
   const [activeHandle, setActiveHandle] = useState(-1);
   const [dragMode, setDragMode] = useState<DragMode>('none');
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [wallWidthMeters, setWallWidthMeters] = useState<number | null>(null);
 
   const dragStartRef = useRef<Point>({ x: 0, y: 0 });
   const dragModeRef = useRef<DragMode>('none');
@@ -493,12 +497,30 @@ export default function LiveARView({ selectedProduct, products, onChangeProduct,
         <ProductTooltip product={selectedProduct} onBuy={handleBuy} />
       </div>
 
-      {/* Hint: shown briefly when no selection has been made by user */}
-      {cameraReady && !dragMode && showSelection && wallPoints && (
+      {/* Calcola m² button — shows once the wall is selected */}
+      {cameraReady && wallPoints && !showCalculator && (
         <div className="pointer-events-none absolute bottom-28 left-1/2 -translate-x-1/2 sm:bottom-6">
-          <div className="rounded-full bg-black/60 px-4 py-2 text-xs text-white backdrop-blur-sm">
-            Trascina per ridefinire l&apos;area · sposta gli angoli per regolare
-          </div>
+          <button
+            onClick={() => setShowCalculator(true)}
+            className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/20 bg-black/65 px-4 py-2 text-xs font-semibold text-white backdrop-blur-md transition-all hover:bg-black/80 active:scale-95"
+          >
+            <RulerIcon />
+            Calcola m² e costo
+          </button>
+        </div>
+      )}
+
+      {/* Surface area calculator panel */}
+      {showCalculator && wallPoints && (
+        <div className="pointer-events-auto absolute bottom-24 left-1/2 -translate-x-1/2 w-[calc(100vw-24px)] max-w-sm sm:bottom-6">
+          <WallCalculator
+            wallPoints={wallPoints}
+            product={selectedProduct}
+            initialWidth={wallWidthMeters}
+            onWidthChange={setWallWidthMeters}
+            onClose={() => setShowCalculator(false)}
+            onBuy={handleBuy}
+          />
         </div>
       )}
 
@@ -574,6 +596,147 @@ function drawSelectionOverlay(
     ctx.stroke();
     ctx.restore();
   });
+}
+
+// ---------------------------------------------------------------------------
+// Wall surface area calculator
+// ---------------------------------------------------------------------------
+
+interface CalcProps {
+  wallPoints: [Point, Point, Point, Point];
+  product: WooProduct;
+  initialWidth: number | null;
+  onWidthChange: (w: number | null) => void;
+  onClose: () => void;
+  onBuy: () => void;
+}
+
+function WallCalculator({ wallPoints, product, initialWidth, onWidthChange, onClose, onBuy }: CalcProps) {
+  const [inputVal, setInputVal] = useState(initialWidth !== null ? String(initialWidth) : '');
+  const pricePerSqM = parseFloat(product.price) || 0;
+
+  const width = parseFloat(inputVal);
+  const isValid = !isNaN(width) && width > 0 && width <= 50;
+  const result = isValid ? computeSurfaceArea(wallPoints, width, pricePerSqM) : null;
+
+  function handleInput(v: string) {
+    setInputVal(v);
+    const n = parseFloat(v);
+    onWidthChange(!isNaN(n) && n > 0 ? n : null);
+  }
+
+  const fmt = (n: number) =>
+    n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 });
+
+  const PRESETS = [1, 2, 3, 4, 5];
+
+  return (
+    <div className="rounded-2xl border border-white/15 bg-black/80 p-4 shadow-2xl backdrop-blur-lg animate-fade-in">
+      {/* Header */}
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <RulerIcon />
+          <span className="text-sm font-semibold text-white">Calcola superficie reale</span>
+        </div>
+        <button
+          onClick={onClose}
+          className="flex h-7 w-7 items-center justify-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white"
+          aria-label="Chiudi calcolatore"
+        >
+          <CloseIcon />
+        </button>
+      </div>
+
+      {/* Width input */}
+      <div className="mb-3">
+        <label className="mb-1.5 block text-xs text-white/60">
+          Larghezza zona selezionata (metri)
+        </label>
+        <div className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2.5">
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0.1"
+            max="50"
+            step="0.1"
+            value={inputVal}
+            onChange={(e) => handleInput(e.target.value)}
+            placeholder="es. 3.5"
+            className="flex-1 bg-transparent text-sm font-semibold text-white placeholder-white/30 outline-none"
+          />
+          <span className="text-sm text-white/50">m</span>
+        </div>
+        {/* Quick presets */}
+        <div className="mt-2 flex gap-1.5">
+          {PRESETS.map((p) => (
+            <button
+              key={p}
+              onClick={() => handleInput(String(p))}
+              className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition-colors ${
+                parseFloat(inputVal) === p
+                  ? 'bg-[var(--color-primary)] text-white'
+                  : 'bg-white/10 text-white/70 hover:bg-white/20'
+              }`}
+            >
+              {p}m
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Results */}
+      {result && result.areaSqM > 0 ? (
+        <div className="mb-3 rounded-xl bg-white/8 p-3 space-y-2">
+          <ResultRow
+            label="Superficie selezionata"
+            value={`${result.areaSqM.toLocaleString('it-IT', { minimumFractionDigits: 2 })} m²`}
+          />
+          <ResultRow
+            label={`Con margine di taglio (+10%)`}
+            value={`${result.areaWithMarginSqM.toLocaleString('it-IT', { minimumFractionDigits: 2 })} m²`}
+          />
+          <ResultRow
+            label={`Pannelli ${(PANEL_SQM * 10000).toFixed(0)} cm² necessari`}
+            value={`${result.panelsNeeded} pz`}
+          />
+          <div className="h-px bg-white/10" />
+          <ResultRow
+            label="Costo stimato (IVA esclusa)"
+            value={pricePerSqM > 0 ? fmt(result.totalPrice) : '—'}
+            highlight
+          />
+        </div>
+      ) : (
+        !inputVal && (
+          <p className="mb-3 text-center text-xs text-white/40">
+            Inserisci la larghezza reale della zona selezionata
+          </p>
+        )
+      )}
+
+      {result && result.areaSqM > 0 && pricePerSqM > 0 && (
+        <button
+          onClick={onBuy}
+          className="w-full rounded-xl bg-[var(--color-accent)] py-3 text-sm font-bold text-black transition-transform active:scale-95"
+        >
+          Acquista — {fmt(result.totalPrice)}
+        </button>
+      )}
+
+      <p className="mt-2 text-center text-[10px] text-white/30">
+        Il calcolo include il 10% di margine di taglio standard
+      </p>
+    </div>
+  );
+}
+
+function ResultRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className={`text-xs ${highlight ? 'font-semibold text-white' : 'text-white/60'}`}>{label}</span>
+      <span className={`text-sm font-bold ${highlight ? 'text-[var(--color-accent)]' : 'text-white'}`}>{value}</span>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -676,4 +839,10 @@ function BagIcon() {
 }
 function SpinnerIcon({ className }: { className?: string }) {
   return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>;
+}
+function RulerIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.3 8.7 8.7 21.3c-1 1-2.5 1-3.4 0l-2.6-2.6c-1-1-1-2.5 0-3.4L15.3 2.7c1-1 2.5-1 3.4 0l2.6 2.6c1 1 1 2.5 0 3.4z"/><path d="m7.5 10.5 2 2"/><path d="m10.5 7.5 2 2"/><path d="m13.5 4.5 2 2"/><path d="m4.5 13.5 2 2"/></svg>;
+}
+function CloseIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
 }
