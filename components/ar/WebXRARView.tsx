@@ -166,6 +166,8 @@ export default function WebXRARView({
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = 'anonymous';
 
+    const activeMat: THREE.MeshStandardMaterial = mat; // capture narrowed ref for closures
+
     function applyTexture(tex: THREE.Texture) {
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
@@ -173,8 +175,8 @@ export default function WebXRARView({
       tex.colorSpace = THREE.SRGBColorSpace;
       textureRef.current?.dispose();
       textureRef.current = tex;
-      mat.map = tex;
-      mat.needsUpdate = true;
+      activeMat.map = tex;
+      activeMat.needsUpdate = true;
       // Update already-placed panels too
       placedRef.current.forEach(m => {
         const pm = m.material as THREE.MeshStandardMaterial;
