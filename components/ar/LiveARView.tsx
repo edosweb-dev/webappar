@@ -486,7 +486,11 @@ export default function LiveARView({ selectedProduct, products, onChangeProduct,
       <div className="pointer-events-none absolute right-3 top-16 flex flex-col gap-2 sm:right-4 sm:top-20">
         <FloatingButton onClick={handleSave} label="Salva" icon={<DownloadIcon />} primary />
         <FloatingButton onClick={handleShare} label="Condividi" icon={<ShareIcon />} />
-        <FloatingButton onClick={handleBuy} label="Acquista" icon={<BagIcon />} accent />
+      </div>
+
+      {/* Product price tooltip — bottom-left, above the product picker */}
+      <div className="pointer-events-none absolute bottom-24 left-3 sm:bottom-6 sm:left-4">
+        <ProductTooltip product={selectedProduct} onBuy={handleBuy} />
       </div>
 
       {/* Hint: shown briefly when no selection has been made by user */}
@@ -570,6 +574,69 @@ function drawSelectionOverlay(
     ctx.stroke();
     ctx.restore();
   });
+}
+
+// ---------------------------------------------------------------------------
+// Price tooltip
+// ---------------------------------------------------------------------------
+
+function formatPrice(raw: string): string {
+  const n = parseFloat(raw);
+  if (!raw || isNaN(n) || n === 0) return '';
+  return n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 });
+}
+
+interface TooltipProps {
+  product: WooProduct;
+  onBuy: () => void;
+}
+
+function ProductTooltip({ product, onBuy }: TooltipProps) {
+  const [imgError, setImgError] = useState(false);
+  const price = formatPrice(product.price);
+  const regularPrice = formatPrice(product.regular_price);
+  const isOnSale = product.sale_price && parseFloat(product.sale_price) > 0 && product.sale_price !== product.regular_price;
+
+  if (!price) return null;
+
+  return (
+    <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-white/15 bg-black/65 px-3 py-2.5 shadow-2xl backdrop-blur-md animate-fade-in">
+      {/* Product thumbnail */}
+      {product.images[0]?.src && !imgError ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={product.images[0].src}
+          alt={product.name}
+          className="h-12 w-12 flex-shrink-0 rounded-xl object-cover"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-white/10 text-xl">
+          🧱
+        </div>
+      )}
+
+      {/* Info */}
+      <div className="min-w-0">
+        <p className="max-w-[130px] truncate text-xs text-white/70">{product.name}</p>
+        <div className="mt-0.5 flex items-baseline gap-1.5">
+          <span className="text-base font-bold text-white">{price}</span>
+          {isOnSale && regularPrice && (
+            <span className="text-xs text-white/50 line-through">{regularPrice}</span>
+          )}
+        </div>
+        <p className="text-[10px] text-white/50">al m²</p>
+      </div>
+
+      {/* Buy CTA */}
+      <button
+        onClick={onBuy}
+        className="ml-1 flex-shrink-0 rounded-xl bg-[var(--color-accent)] px-3 py-2 text-xs font-bold text-black shadow-lg transition-transform active:scale-95"
+      >
+        Acquista
+      </button>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
